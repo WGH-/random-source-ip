@@ -1,7 +1,7 @@
 #!/bin/bash
 
 INTERFACE="$(ip -json route get :: | jq -r '.[0].dev')"
-ADDR="$(ip -json address show dev enp0s25 | jq -r '.[0].addr_info[] | select(.prefixlen == 64 and .mngtmpaddr and .family == "inet6").local')"
+ADDR="$(ip -json address show dev ${INTERFACE} | jq -r '.[0].addr_info[] | select(.prefixlen == 64 and .mngtmpaddr and .family == "inet6").local')"
 
 gen_addresses() {
     python3 -c '
