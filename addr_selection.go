@@ -71,7 +71,7 @@ func NewDialer(addrSelectorFunc AddrSelectorFunc, debug bool) *net.Dialer {
 				host, _, err := net.SplitHostPort(address)
 				if err != nil {
 					// unlikely error
-					log.Printf("%#v", err)
+					log.Printf("%v", err)
 					return err
 				}
 				destinationIp := net.ParseIP(host)
@@ -82,7 +82,7 @@ func NewDialer(addrSelectorFunc AddrSelectorFunc, debug bool) *net.Dialer {
 				}
 				localAddr, err := addrSelectorFunc(destinationIp)
 				if err != nil {
-					log.Printf("%#v", err)
+					log.Printf("%v", err)
 					return err
 				}
 				if localAddr == nil {
