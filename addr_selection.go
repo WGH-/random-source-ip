@@ -59,7 +59,53 @@ func getInterfaceForDestination(destination net.IP) (int, error) {
 	return r[0].LinkIndex, nil
 }
 
-func NewDialer(randomSource rand.Source, debug bool) *net.Dialer {
+type AddrSelectorFunc = func(destination net.IP) (net.IP, error)
+
+func NewDialer(addrSelectorFunc AddrSelectorFunc, debug bool) *net.Dialer {
+	return &net.Dialer{
+		Control: func(network, address string, c syscall.RawConn) error {
+			if debug {
+				log.Printf("Control: network=%q address=%q", network, address)
+			}
+			if network == "tcp6" || network == "udp6" {
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					// unlikely error
+					log.Printf("%#v", err)
+					return err
+				}
+				destinationIp := net.ParseIP(host)
+				if destinationIp == nil {
+					// unlikely error
+					log.Printf("failed to parse IP %q", host)
+					return fmt.Errorf("bad IP %q", host)
+				}
+				localAddr, err := addrSelectorFunc(destinationIp)
+				if err != nil {
+					log.Printf("%#v", err)
+					return err
+				}
+				if localAddr == nil {
+					return nil
+				}
+				if debug {
+					log.Printf("selected addr %q", localAddr)
+				}
+				c.Control(func(fd uintptr) {
+					sa := unix.SockaddrInet6{}
+					copy(sa.Addr[:], localAddr)
+					err = unix.Bind(int(fd), &sa)
+				})
+				return err
+			}
+			return nil
+		},
+	}
+}
+
+// NewRandomChoiceDialer returns a dialer that chooses a source IP randomly
+// among all available IPs on the interface.
+func NewRandomChoiceDialer(randomSource rand.Source, debug bool) *net.Dialer {
 	if randomSource == nil {
 		var b [8]byte
 		if _, err := cryptorand.Read(b[:]); err != nil {
@@ -75,45 +121,17 @@ func NewDialer(randomSource rand.Source, debug bool) *net.Dialer {
 		return random.Int()
 	}
 
-	return &net.Dialer{
-		Control: func(network, address string, c syscall.RawConn) error {
-			if debug {
-				log.Printf("Control: network=%q address=%q", network, address)
-			}
-			if network == "tcp6" || network == "udp6" {
-				host, _, err := net.SplitHostPort(address)
-				if err != nil {
-					log.Printf("%#v", err)
-					return err
-				}
-
-				destinationIp := net.ParseIP(host)
-				if destinationIp == nil {
-					log.Printf("failed to parse IP %q", host)
-					return fmt.Errorf("bad IP %q", host)
-				}
-
-				iface, err := getInterfaceForDestination(destinationIp)
-				if err != nil {
-					log.Printf("%#v", err)
-					return err
-				}
-				localAddr, err := getRandomIntefaceAddress(iface, randint)
-				if err != nil {
-					log.Printf("%#v", err)
-					return err
-				}
-				if debug {
-					log.Printf("selected addr %q", localAddr)
-				}
-				c.Control(func(fd uintptr) {
-					sa := unix.SockaddrInet6{}
-					copy(sa.Addr[:], localAddr)
-					err = unix.Bind(int(fd), &sa)
-				})
-				return err
-			}
-			return nil
-		},
-	}
+	return NewDialer(func(destination net.IP) (net.IP, error) {
+		iface, err := getInterfaceForDestination(destination)
+		if err != nil {
+			log.Printf("%#v", err)
+			return nil, err
+		}
+		localAddr, err := getRandomIntefaceAddress(iface, randint)
+		if err != nil {
+			log.Printf("%#v", err)
+			return nil, err
+		}
+		return localAddr, err
+	}, debug)
 }

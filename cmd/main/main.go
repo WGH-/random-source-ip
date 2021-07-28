@@ -10,7 +10,7 @@ import (
 
 func main() {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = randomsourceip.NewDialer(nil, true).DialContext
+	transport.DialContext = randomsourceip.NewRandomChoiceDialer(nil, true).DialContext
 	transport.DisableKeepAlives = true
 
 	client := &http.Client{
